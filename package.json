@@ -48,8 +48,9 @@
     "lib/**/*"
   ],
   "dependencies": {
-    "typeorm": "^0.3.0",
-    "date-fns": "^2.29.3"
+    "date-fns": "^2.29.3",
+    "sqlite3": "^5.1.7",
+    "typeorm": "^0.3.0"
   },
   "config": {
     "commitizen": {
