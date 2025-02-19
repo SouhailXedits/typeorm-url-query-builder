@@ -1,6 +1,7 @@
 import { isMatch } from 'date-fns';
 import { Between, In, IsNull, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Brackets, SelectQueryBuilder } from 'typeorm';
 import { DataSource } from 'typeorm';
+import { FindOptionsSelect, FindOptionsSelectByString, FindOptionsOrder, FindOptionsWhere } from 'typeorm';
 
 export interface IOptionsObject {
   LOOKUP_DELIMITER?: string;
@@ -26,16 +27,16 @@ export interface IOptionsObject {
   AND?: string;
   NESTED_DELIMITER?: string;
 }
-export interface IQueryTypeOrm {
-  select?: string[];
+export interface IQueryTypeOrm<T = any> {
+  select?: FindOptionsSelect<T> | FindOptionsSelectByString<T>;
   relations?: string[];
-  where?: {};
-  order?: {};
+  where?: FindOptionsWhere<T> | FindOptionsWhere<T>[];
+  order?: FindOptionsOrder<T>;
   skip?: number;
   take?: number;
   cache?: boolean;
 }
-export interface IQueryObject {
+export interface IParserQueryObject {
   select?: string;
   join?: string;
   sort?: string;
@@ -65,7 +66,7 @@ interface IWhereCondition {
   not?: boolean;
 }
 
-export interface IAdvancedQueryObject extends IQueryObject {
+export interface IAdvancedQueryObject extends IParserQueryObject {
   orderNulls?: string; // Format: "field,ASC,NULLS_FIRST;field2,DESC,NULLS_LAST"
   groupBy?: string; // Format: "field1,field2"
   having?: string; // Format: "count > 5;sum > 1000"
@@ -116,18 +117,23 @@ export class QueryBuilder {
   public getOptions() {
     return this.options;
   }
-  public build(query: IQueryObject) {
-    const output: IQueryTypeOrm = {};
+  public build<T>(query: IParserQueryObject): IQueryTypeOrm<T> {
+    const output: IQueryTypeOrm<T> = {};
     if (!this.notValid(query.select)) {
       const select = query.select as string;
-      output.select = select.split(this.options.VALUE_DELIMITER! as string);
+      const selectFields = select.split(this.options.VALUE_DELIMITER! as string);
+      // Convert array to object format that TypeORM expects
+      output.select = selectFields.reduce((acc: any, field: string) => {
+        acc[field] = true;
+        return acc;
+      }, {} as FindOptionsSelect<T>);
     }
     if (!this.notValid(query.join)) {
       const join = query.join as string;
       output.relations = join.split(this.options.VALUE_DELIMITER! as string);
     }
     if (!this.notValid(query.sort)) {
-      output.order = this.createOrderArray(query.sort as string);
+      output.order = this.createOrderArray(query.sort as string) as FindOptionsOrder<T>;
     }
     if (!this.notValid(query.cache)) {
       const cache = query.cache as string;
@@ -377,8 +383,8 @@ export class QueryBuilder {
     return isNaN(num) ? value : num;
   }
 
-  public buildAdvanced(query: IAdvancedQueryObject, alias: string = 'entity', connection: DataSource): SelectQueryBuilder<any> {
-    const queryBuilder = connection.createQueryBuilder();
+  public buildAdvanced(query: IAdvancedQueryObject, alias: string = 'entity', queryBuilder: SelectQueryBuilder<any>): SelectQueryBuilder<any> {
+    // const queryBuilder = connection.createQueryBuilder();
     queryBuilder.from(alias, alias);
 
     // Handle select fields
