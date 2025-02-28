@@ -12,6 +12,7 @@ import {
   Brackets,
   SelectQueryBuilder,
   WhereExpressionBuilder,
+  ObjectLiteral,
 } from 'typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -151,18 +152,27 @@ export class QueryBuilder {
       output.relations = join.split(this.options.VALUE_DELIMITER! as string);
     }
     if (!this.notValid(query.sort)) {
-      const orderByObj = this.createOrderArray(query.sort as string);
-      // Convert to TypeORM order format - use any to bypass type checking
-      const order: any = {};
-      Object.entries(orderByObj).forEach(([field, { direction, nulls }]) => {
-        if (nulls) {
-          // TypeORM supports nulls option in FindOptionsOrder
-          order[field] = {
-            order: direction,
-            nulls: nulls === 'NULLS FIRST' ? 'NULLS FIRST' : 'NULLS LAST',
-          };
-        } else {
-          order[field] = direction;
+      const sortConditions = (query.sort as string).split(this.options.CONDITION_DELIMITER!);
+      const order: { [key: string]: { direction: string; nulls?: string } } = {};
+
+      sortConditions.forEach((condition) => {
+        const parts = condition.split(this.options.VALUE_DELIMITER!);
+        if (parts.length > 0 && parts[0]) {
+          const key = parts[0];
+          const direction = (parts[1] || 'ASC').toUpperCase();
+
+          // Check if NULLS FIRST or NULLS LAST is specified
+          let nulls: string | undefined = undefined;
+          if (parts.length > 2) {
+            const nullsOption = parts[2].toUpperCase();
+            if (nullsOption === 'NULLS FIRST' || nullsOption === 'NULLS_FIRST') {
+              nulls = 'NULLS FIRST';
+            } else if (nullsOption === 'NULLS LAST' || nullsOption === 'NULLS_LAST') {
+              nulls = 'NULLS LAST';
+            }
+          }
+
+          order[key] = { direction, nulls };
         }
       });
       output.order = order as FindOptionsOrder<T>;
@@ -592,7 +602,7 @@ export class QueryBuilder {
     return isNaN(num) ? value : num;
   }
 
-  public buildAdvanced<T>(
+  public buildAdvanced<T extends ObjectLiteral>(
     query: IParserQueryObject,
     alias: string,
     queryBuilder: SelectQueryBuilder<T>,
@@ -609,7 +619,7 @@ export class QueryBuilder {
     // Get sort fields that need to be included in select
     const sortFields = new Set<string>();
     if (!this.notValid(query.sort)) {
-      const sortConditions = query.sort.split(this.options.CONDITION_DELIMITER!);
+      const sortConditions = (query.sort as string).split(this.options.CONDITION_DELIMITER!);
       sortConditions.forEach((condition) => {
         const [field] = condition.split(this.options.VALUE_DELIMITER!);
         if (field) {
@@ -621,12 +631,12 @@ export class QueryBuilder {
     // First pass: Check for wildcards to determine if we need all fields for any relation
     // Also identify nested relations from select, sort, and filter
     if (!this.notValid(query.select)) {
-      this.identifyNestedRelations(query.select, relationWildcards, nestedRelations);
+      this.identifyNestedRelations(query.select || '', relationWildcards, nestedRelations);
     }
 
     // Also check for nested relations in filter
     if (!this.notValid(query.filter)) {
-      this.identifyNestedRelationsInFilter(query.filter, nestedRelations);
+      this.identifyNestedRelationsInFilter(query.filter || '', nestedRelations);
     }
 
     // Also check for nested relations in sort
@@ -636,10 +646,10 @@ export class QueryBuilder {
 
     // Handle select fields
     if (!this.notValid(query.select)) {
-      const selectFields = query.select.split(this.options.VALUE_DELIMITER!);
+      const selectFields = query.select?.split(this.options.VALUE_DELIMITER!);
 
       // First, handle root table selection
-      const hasRootWildcard = selectFields.includes('*');
+      const hasRootWildcard = selectFields?.includes('*');
 
       // Always start with selecting the ID to ensure proper distinct handling
       queryBuilder.select(`${alias}.id`);
@@ -687,7 +697,7 @@ export class QueryBuilder {
       }
 
       // Second pass: Handle relation selections
-      selectFields.forEach((field) => {
+      selectFields?.forEach((field) => {
         if (field === '*') {
           // Already handled above
           return;
@@ -824,8 +834,8 @@ export class QueryBuilder {
 
     // Handle joins for cases where relations are specified in join but not in select
     if (!this.notValid(query.join)) {
-      const joins = query.join.split(this.options.VALUE_DELIMITER!);
-      joins.forEach((join) => {
+      const joins = query.join?.split(this.options.VALUE_DELIMITER!);
+      joins?.forEach((join) => {
         const [relation, joinType = 'left'] = join.split(':');
 
         // Skip if already joined
@@ -899,7 +909,7 @@ export class QueryBuilder {
 
     // Handle where conditions
     if (!this.notValid(query.filter)) {
-      const whereConditions = this.parseFilterString(query.filter);
+      const whereConditions = this.parseFilterString(query.filter || '');
 
       if (whereConditions.length > 0) {
         queryBuilder.where(
@@ -921,7 +931,7 @@ export class QueryBuilder {
 
     // Handle sorting
     if (!this.notValid(query.sort)) {
-      const orderBy = this.createOrderArray(query.sort);
+      const orderBy = this.createOrderArray(query.sort || '');
       Object.entries(orderBy).forEach(([field, { direction, nulls }]) => {
         if (field.includes(this.options.RELATION_DELIMITER!)) {
           const [relation, subField] = field.split(this.options.RELATION_DELIMITER!);
@@ -956,12 +966,12 @@ export class QueryBuilder {
 
     // Handle pagination
     if (!this.notValid(query.limit)) {
-      queryBuilder.take(parseInt(query.limit));
+      queryBuilder.take(parseInt(query.limit || this.options.DEFAULT_LIMIT!));
     }
 
     if (!this.notValid(query.page)) {
       const limit = parseInt(query.limit || this.options.DEFAULT_LIMIT!);
-      const page = parseInt(query.page);
+      const page = parseInt(query.page || '1');
       queryBuilder.skip(limit * (page - 1));
       queryBuilder.take(limit);
     }
