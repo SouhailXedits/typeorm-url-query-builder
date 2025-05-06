@@ -80,6 +80,7 @@ example.com?filter=name||$eq||John||$or||age||$gt||25
 
 ### Filter Operators
 - `$eq` - Equal
+- `$ne` - Not equal
 - `$cont` - Contains
 - `$isnull` - Is null
 - `$gt` - Greater than
